@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+## Author: Emiliano Sauvisky
+
+## Nível de logging (pode ser setado como variavel de ambiente)
+LOG_LEVEL="${LOG_LEVEL:-7}"
+## Dependências
+__deps=( "sed" "grep" "adb" "xclip" )
+
+
+PGO_DATA='/data/data/com.nianticlabs.pokemongo/'
+
+#############################################################################
+####### Funções e configurações (normalmente não é necessário editar) #######
+#############################################################################
+## Parâmetros posicionais do bash
+set -o errexit  # Exit on error. Append "|| true" if you expect an error.
+set -o errtrace # Exit on error inside any functions or subshells.
+#set -o nounset  # Do not allow use of undefined vars. Use ${VAR:-} to use an undefined VAR
+#set -o pipefail # Catch the error in case mysqldump fails (but gzip succeeds) in `mysqldump |gzip`
+#set -o xtrace  # Turn on traces, useful while debugging.
+
+## Variáveis mágicas
+__dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#__dir="$(cd "$(dirname $(realpath "${BASH_SOURCE[0]}"))" && pwd)" # com resolução de Symlinks
+__base=$(basename "${BASH_SOURCE[0]}")
+
+## Funções de Logging
+function __log () {
+    local log_level="${1}"; shift; local color_debug="\x1b[35m"; local color_info="\x1b[32m"; local color_notice="\x1b[34m"; local color_warning="\x1b[33m"; local color_error="\x1b[31m"; local color_critical="\x1b[1;31m"; local color_alert="\x1b[1;33;41m"; local color_emergency="\x1b[1;4;5;33;41m"; local colorvar="color_${log_level}"; local color="${!colorvar:-$color_error}"; local color_reset="\x1b[0m"; local log_line=""
+    while IFS=$'\n' read -r log_line; do
+        echo -e "${__base}: ${color}$(printf "[%9s]" ${log_level})${color_reset} $log_line" 1>&2
+    done <<< "${@:-}"
+}
+function emergency () {                                $(__log emergency "${@}") || true; exit 1; }
+function alert ()     { [ "${LOG_LEVEL:-0}" -ge 1 ] && $(__log alert "${@}") || true; exit 1; }
+function critical ()  { [ "${LOG_LEVEL:-0}" -ge 2 ] && $(__log critical "${@}") || true; exit 1; }
+function error ()     { [ "${LOG_LEVEL:-0}" -ge 3 ] && $(__log error "${@}") || true; }
+function warning ()   { [ "${LOG_LEVEL:-0}" -ge 4 ] && $(__log warning "${@}") || true; }
+function notice ()    { [ "${LOG_LEVEL:-0}" -ge 5 ] && $(__log notice "${@}") || true; }
+function info ()      { [ "${LOG_LEVEL:-0}" -ge 6 ] && $(__log info "${@}") || true; }
+function debug ()     { [ "${LOG_LEVEL:-0}" -ge 7 ] && $(__log debug "${@}") || true; }
+
+## Verifica se dependências existem em $PATH
+for dep in ${__deps[@]}; do
+    hash $dep &>/dev/null || emergency "$dep was not found. Please install it and try again.";
+done
+
+#############################################################################
+#######                           Argumentos                          #######
+#############################################################################
+function usage {
+    echo -e "Usage: ${__base} [OPTIONS]"
+    echo -e "\nPretty much everything here requires a rooted device and adb running."
+    echo -e "\nOptions:"
+    echo -e "  -h, --help               This page"
+    echo -e "  -s, --switch             Switches Pokemon Go Profile between main "
+    echo -e "                             and alt accounts, preserving data from both."
+    echo -e "  -c, --clean              Clears all data and restarts the application."
+    echo -e "                             The profile is backed up before cleaning up."
+    echo -e "  -b, --backup             Backups your current profile to /sdcard"
+    echo -e "  -p, --paste              Pastes your computer clipboard directly to the device."
+    echo -e "                             Requires 'clipper' on your phone and 'xclip' on your PC."
+
+    # echo -e "  -p, --pointer            Toggles pointer tracking on screen."
+    # echo -e "  -r, --resize             Alternates between 1080p and 576x1024px"
+}
+
+[[ $# -eq 0 ]] && usage && exit
+
+function backupPoGo {
+    if [[ -z $1 && -z $2 ]]; then
+        backupTo=/sdcard/PGoBackups/$(date +%s)/
+    elif [[ ! -z $1 && ! -z $2 ]]; then
+        backupTo=/sdcard/PGoBackups/$1/
+        movePreviousBackupTo=/sdcard/PGoBackups/$2/
+        if ! $(adb shell test -d $backupTo); then
+            info "No alt profile exists. Creating a new one..."
+        elif $(adb shell test -d $movePreviousBackupTo); then
+            info "ERROR! $movePreviousBackupTo already exists."
+            exit
+        else
+            info "Moving last profile to temporary directory..."
+            adb shell mv $backupTo $movePreviousBackupTo
+        fi
+    else
+        critical "Something is wrong. backupPoGo takes 2 or 0 arguments."
+    fi
+    info "Copying PoGo data to $backupTo..."
+    adb shell mkdir -p $backupTo
+    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/databases $backupTo || true
+    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/files $backupTo
+    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/no_backup $backupTo || true
+    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/shared_prefs $backupTo
+
+}
+
+function restorePoGo {
+    [[ -z $1 || -z $PGO_DATA ]] && critical "restorePoGo() needs a parameter."
+
+    profileToRestore=/sdcard/PGoBackups/$1/
+
+    if ! adb shell test -d $profileToRestore; then
+        critical "Error, something happened and the profile doesn't exist."
+        exit
+    fi
+
+    info "Restoring last profile..."
+    adb shell su -c cp -R $profileToRestore/* $PGO_DATA
+
+    # PGO_ACC=$(adb shell su -c grep 'accountName' $PGO_DATA/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
+    # TMP_ACC=$(adb shell su -c grep 'accountName' /sdcard/PGoBackups/$1/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
+    if adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/; then
+        info "Deleting temporary folders"
+        adb shell rm -r $profileToRestore
+    else
+        adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/ > ./error_log
+        critical "Somehow the accounts are different! Log was saved to ./error_log."
+    fi
+}
+
+function cleanPoGo {
+    adb shell pm clear com.nianticlabs.pokemongo
+    adb shell monkey -p com.nianticlabs.pokemongo 1
+}
+
+function pasteClipboard {
+    adb shell am broadcast -a clipper.set -e text "$(xclip -o)"
+    adb shell input keyevent KEYCODE_PASTE
+}
+
+
+for (( n = 1; n <= $#; n++ )); do
+    case "${!n}" in
+        -h | --help )
+            usage
+            exit ;;
+        -c | --clean )
+            backupPoGo
+            cleanPoGo
+            exit ;;
+        -p | --paste )
+            pasteClipboard
+            exit ;;
+        # -r | --resize )
+
+        #     exit ;;
+        -s | --switch )
+            adb shell am force-stop com.nianticlabs.pokemongo
+            backupPoGo lastProfile tempProfile
+            restorePoGo tempProfile
+            adb shell monkey -p com.nianticlabs.pokemongo 1
+            exit ;;
+        -b | --backup )
+            backupPoGo
+            exit ;;
+        * )
+            error "Invalid option ${!n}"
+            usage
+            exit ;;
+    esac
+done
