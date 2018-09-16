@@ -59,6 +59,7 @@ function usage {
     echo -e "                             The profile is backed up before cleaning up."
     echo -e "  -b, --backup             Backups your current profile to /sdcard"
     echo -e "  -p, --paste              Pastes your computer clipboard directly to the device."
+    echo -e "  -pe                      Same as below but also teleports automatically."
     echo -e "                             Requires 'clipper' on your phone and 'xclip' on your PC."
 
     # echo -e "  -p, --pointer            Toggles pointer tracking on screen."
@@ -66,6 +67,11 @@ function usage {
 }
 
 [[ $# -eq 0 ]] && usage && exit
+
+function isOneDeviceConnected {
+    [[ $(adb devices 2>&1 | \grep $'\tdevice' -c) -eq 1 ]] && echo 1 || echo 0
+}
+
 
 function backupPoGo {
     if [[ -z $1 && -z $2 ]]; then
@@ -124,8 +130,14 @@ function cleanPoGo {
 }
 
 function pasteClipboard {
-    adb shell am broadcast -a clipper.set -e text "$(xclip -o)"
-    adb shell input keyevent KEYCODE_PASTE
+    if [[ $(isOneDeviceConnected) -eq 1 ]]; then
+        # This works on every version, but types the text letter by letter
+        #adb shell input text \'"$(xclip -selection clipboard -o)"\'
+
+        # This apparently only works on android 7 or higher:
+        adb shell am broadcast -a clipper.set -e text \'"$(xclip -selection clipboard -o)"\'
+        adb shell input keyevent KEYCODE_PASTE
+    fi
 }
 
 
@@ -137,6 +149,14 @@ for (( n = 1; n <= $#; n++ )); do
         -c | --clean )
             backupPoGo
             cleanPoGo
+            exit ;;
+        -pe )
+            pasteClipboard
+            for (( i = 0; i < 4; i++ )); do
+                adb shell input keyevent KEYCODE_TAB &
+            done
+            adb shell input keyevent KEYCODE_TAB
+            adb shell input keyevent KEYCODE_ENTER
             exit ;;
         -p | --paste )
             pasteClipboard
