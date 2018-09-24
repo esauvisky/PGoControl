@@ -38,6 +38,10 @@ This does some things automatically when connecting your device via adb, like:
 - `×`
 - `∅` (alingside `0`)
 - `≈` (alongside `=`)
+- `↑` (alingside `^`)
+- `→` (alingside `^`)
+- `↓` (alingside `^`)
+- `←` (alingside `^`)
 - `·` (alongside `-`)
 - `†` (alongside `*`)
 - `‡` (alongside `*`)
