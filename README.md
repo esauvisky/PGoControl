@@ -18,19 +18,35 @@ This does some things automatically when connecting your device via adb, like:
 *This is the order in which PokémonGo displays your pokémon when sorting by name (A-Z}.*
 
 - `꩜ ` (the special @, does not exist on Gboard)
+- `$`
 - `%`
-- `›` (alongside `'`)
+- `&`
+- `*`
+- `,`
+- `.`
+- `?`
+- `_`
+- `¡` (alongside `!`)
+- `¿` (alongside `?`)
 - `“` (alongside `"`)
+- `›` (alongside `'`)
+- `+`
+- `‽` (alongside `?`)
 - `⁺` (superscript plus, does not exist on Gboard)
 - `»` (alongside `"`)
 - `÷`
-- `≈` (alongside `=` )
+- `×`
+- `∅` (alingside `0`)
+- `≈` (alongside `=`)
 - `·` (alongside `-`)
+- `†` (alongside `*`)
+- `‡` (alongside `*`)
 - `•`
+- `★` (alongside `*`)
 - `♠` (alongside `•`)
 - `♦` (alongside `•`)
 - `♣` (alongside `•`)
 - `♥` (alongside `•`)
 - `✓`
+- `‰`
 - `∞` (alongside `=`)
-- `℅` (alongside `%`)

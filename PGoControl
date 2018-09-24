@@ -61,12 +61,11 @@ function usage {
     echo -e "  -p, --paste              Pastes your computer clipboard directly to the device."
     echo -e "  -pe                      Same as below but also teleports automatically."
     echo -e "                             Requires 'clipper' on your phone and 'xclip' on your PC."
-
-    # echo -e "  -p, --pointer            Toggles pointer tracking on screen."
+    echo -e "  -t, --tracking           Toggles pointer tracking on screen."
     # echo -e "  -r, --resize             Alternates between 1080p and 576x1024px"
 }
 
-[[ $# -eq 0 ]] && usage && exit
+[[ $# -eq 0 ]] && usage
 
 function isOneDeviceConnected {
     [[ $(adb devices 2>&1 | \grep $'\tdevice' -c) -eq 1 ]] && echo 1 || echo 0
@@ -116,8 +115,10 @@ function restorePoGo {
     # PGO_ACC=$(adb shell su -c grep 'accountName' $PGO_DATA/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
     # TMP_ACC=$(adb shell su -c grep 'accountName' /sdcard/PGoBackups/$1/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
     if adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/; then
-        info "Deleting temporary folders"
-        adb shell rm -r $profileToRestore
+        if [[ $1 == 'tempProfile' ]]; then
+            info "Deleting temporary folders"
+            adb shell rm -r $profileToRestore
+        fi
     else
         adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/ > ./error_log
         critical "Somehow the accounts are different! Log was saved to ./error_log."
@@ -131,10 +132,11 @@ function cleanPoGo {
 
 function pasteClipboard {
     if [[ $(isOneDeviceConnected) -eq 1 ]]; then
-        # This works on every version, but types the text letter by letter
+        # This works on every version, but types the text letter by letter,
+        # which also makes the keyboard to pop up and takes longer overall.
         #adb shell input text \'"$(xclip -selection clipboard -o)"\'
 
-        # This apparently only works on android 7 or higher:
+        # This apparently only works on android 7 (?) or higher:
         adb shell am broadcast -a clipper.set -e text \'"$(xclip -selection clipboard -o)"\'
         adb shell input keyevent KEYCODE_PASTE
     fi
@@ -161,9 +163,18 @@ for (( n = 1; n <= $#; n++ )); do
         -p | --paste )
             pasteClipboard
             exit ;;
-        # -r | --resize )
-
-        #     exit ;;
+        -t | --tracking )
+            status=$(adb shell content query --uri content://settings/system/pointer_location | sed 's/^..*value=//')
+            if [[ $status -eq 1 ]]; then
+                info "Disabling pointer tracking..."
+                adb shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:0
+            elif [[ $status -eq 0 ]]; then
+                info "Enabling pointer tracking..."
+                adb shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:1
+            else
+                critical "Something is wrong :("
+            fi
+            exit ;;
         -s | --switch )
             adb shell am force-stop com.nianticlabs.pokemongo
             backupPoGo lastProfile tempProfile
@@ -176,6 +187,6 @@ for (( n = 1; n <= $#; n++ )); do
         * )
             error "Invalid option ${!n}"
             usage
-            exit ;;
+            ;;
     esac
 done
