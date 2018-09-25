@@ -59,10 +59,12 @@ function usage {
     echo -e "                             The profile is backed up before cleaning up."
     echo -e "  -b, --backup             Backups your current profile to /sdcard"
     echo -e "  -p, --paste              Pastes your computer clipboard directly to the device."
-    echo -e "  -pe                      Same as below but also teleports automatically."
+    echo -e "                             Requires Android 7 or higher."
+    echo -e "  -pe                      Same as below but also clicks on Teleport automatically."
     echo -e "                             Requires 'clipper' on your phone and 'xclip' on your PC."
+    echo -e "                             Also assumes that you're using 'GPS Joystick' by TheAppNinjas."
+    echo -e "                             Requires Android 7 or higher."
     echo -e "  -t, --tracking           Toggles pointer tracking on screen."
-    # echo -e "  -r, --resize             Alternates between 1080p and 576x1024px"
 }
 
 [[ $# -eq 0 ]] && usage
@@ -154,11 +156,7 @@ for (( n = 1; n <= $#; n++ )); do
             exit ;;
         -pe )
             pasteClipboard
-            for (( i = 0; i < 4; i++ )); do
-                adb shell input keyevent KEYCODE_TAB &
-            done
-            adb shell input keyevent KEYCODE_TAB
-            adb shell input keyevent KEYCODE_ENTER
+            adb shell input keyevent KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_ENTER
             exit ;;
         -p | --paste )
             pasteClipboard
