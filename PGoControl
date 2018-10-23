@@ -63,14 +63,14 @@ function usage {
     echo -e "  -pe                      Same as below but also clicks on Teleport automatically."
     echo -e "                             Requires 'clipper' on your phone and 'xclip' on your PC."
     echo -e "                             Also assumes that you're using 'GPS Joystick' by TheAppNinjas."
-    echo -e "                             Requires Android 7 or higher."
     echo -e "  -t, --tracking           Toggles pointer tracking on screen."
 }
 
 [[ $# -eq 0 ]] && usage
 
-function isOneDeviceConnected {
-    [[ $(adb devices 2>&1 | \grep $'\tdevice' -c) -eq 1 ]] && echo 1 || echo 0
+function numberDevicesConnected {
+    echo $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//' | wc -l)
+    #[[ $(adb devices 2>&1 | \grep $'\tdevice' -c) -eq 1 ]] && echo 1 || echo 0
 }
 
 
@@ -133,17 +133,33 @@ function cleanPoGo {
 }
 
 function pasteClipboard {
-    if [[ $(isOneDeviceConnected) -eq 1 ]]; then
-        # This works on every version, but types the text letter by letter,
-        # which also makes the keyboard to pop up and takes longer overall.
-        #adb shell input text \'"$(xclip -selection clipboard -o)"\'
-
-        # This apparently only works on android 7 (?) or higher:
-        adb shell am broadcast -a clipper.set -e text \'"$(xclip -selection clipboard -o)"\'
-        adb shell input keyevent KEYCODE_PASTE
+    local_clipboard=$(xclip -selection clipboard -o)
+    if [[ $(numberDevicesConnected) -eq 1 ]]; then
+        if [[ $1 == 'teleport' ]]; then
+            adb shell am broadcast -a clipper.set -e text \'${local_clipboard}\'
+            adb shell input keyevent KEYCODE_TAB KEYCODE_ENTER KEYCODE_ESCAPE KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_ENTER
+        else
+            # adb shell input text \'${local_clipboard}\'
+            adb shell am broadcast -a clipper.set -e text \'${local_clipboard}\'
+            adb shell input keyevent KEYCODE_PASTE
+        fi
+    elif [[ $(numberDevicesConnected) -gt 1 ]]; then
+        for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
+            echo "Sendign $device"
+            adb -s $device shell am broadcast -a clipper.set -e text \'${local_clipboard}\'
+            adb -s $device shell input keyevent KEYCODE_PASTE || true
+        done
+    else
+        connectCommonDevices
     fi
 }
 
+function connectCommonDevices {
+    adb connect 10.42.0.41 &
+    adb connect 10.42.0.189 &
+    adb connect 192.168.202.88 &
+
+}
 
 for (( n = 1; n <= $#; n++ )); do
     case "${!n}" in
@@ -155,8 +171,7 @@ for (( n = 1; n <= $#; n++ )); do
             cleanPoGo
             exit ;;
         -pe )
-            pasteClipboard
-            adb shell input keyevent KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_ENTER
+            pasteClipboard "teleport"
             exit ;;
         -p | --paste )
             pasteClipboard
