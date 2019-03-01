@@ -71,7 +71,7 @@ function usage {
 [[ $# -eq 0 ]] && usage
 
 function numberDevicesConnected {
-    echo $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//' | wc -l)
+    echo $(( $(adb devices | wc -l) - 2 ))
     #[[ $(adb devices 2>&1 | \grep $'\tdevice' -c) -eq 1 ]] && echo 1 || echo 0
 }
 
@@ -136,24 +136,10 @@ function cleanPoGo {
 
 function pasteClipboard {
     local_clipboard=$(xclip -selection clipboard -o)
-    if [[ $(numberDevicesConnected) -eq 1 ]]; then
-        if [[ $1 == 'teleport' ]]; then
-            adb shell am broadcast -a clipper.set -e text \'${local_clipboard}\'
-            adb shell input keyevent KEYCODE_TAB KEYCODE_ENTER KEYCODE_ESCAPE KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_TAB KEYCODE_ENTER
-        else
-            # adb shell input text \'${local_clipboard}\'
-            adb shell am broadcast -a clipper.set -e text \'${local_clipboard}\'
-            adb shell input keyevent KEYCODE_PASTE
-        fi
-    elif [[ $(numberDevicesConnected) -gt 1 ]]; then
-        for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
-            echo "Sendign $device"
-            adb -s $device shell am broadcast -a clipper.set -e text \'${local_clipboard}\'
-            adb -s $device shell input keyevent KEYCODE_PASTE || true
-        done
-    else
-        connectCommonDevices
-    fi
+    for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
+        echo "Sending $device"
+        adb -s $device shell am broadcast -a clipper.set -e text \'${local_clipboard}\' && adb -s $device shell input keyevent KEYCODE_PASTE || true &
+    done
 }
 
 function connectCommonDevices {
@@ -165,7 +151,7 @@ function connectCommonDevices {
 function feedGym {
     for (( p=1; p<=6;  p++ )); do
         for (( i=1; i<=10; i++ )); do
-            adb shell input tap 270 1400
+            # adb shell input tap 270 1400
             adb shell input tap 530 1400
             sleep 0.5
         done
@@ -190,16 +176,28 @@ for (( n = 1; n <= $#; n++ )); do
             pasteClipboard
             exit ;;
         -t | --tracking )
-            status=$(adb shell content query --uri content://settings/system/pointer_location | sed 's/^..*value=//')
-            if [[ $status -eq 1 ]]; then
-                info "Disabling pointer tracking..."
-                adb shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:0
-            elif [[ $status -eq 0 ]]; then
-                info "Enabling pointer tracking..."
-                adb shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:1
-            else
-                critical "Something is wrong :("
-            fi
+            for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
+                status=$(adb -s $device shell content query --uri content://settings/system/pointer_location | sed 's/^..*value=//')
+                if [[ $status -eq 1 ]]; then
+                    info "Disabling pointer tracking..."
+                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:0
+                else
+                    info "Enabling pointer tracking..."
+                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:1
+                fi
+            done
+            exit ;;
+        -at | --auto-teleport )
+            for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
+                # adb -s $device shell am start -a android.intent.action.VIEW -n com.tnqbegkugmeb.erpcrlqlrub/com.tnqbegkugmeb.erpcrlqlrub.ui.main.MainActivity -d "geo:$(xclip -o -selection clipboard | sed 's/ //g' | perl -lpe '"'"'s/^[^\d\-]*(-{0,1}\d+\.\d+ {0,2}, {0,2}-{0,1}\d+\.\d+).*$/$1/'"'"')" && adb -s $device shell input tap 900 1190 && adb -s $device shell input keyevent APP_SWITCH && adb -s $device shell input swipe 190 1690 800 1690 100 && adb -s $device shell input keyevent CLEAR APP_SWITCH &
+                location=$(xclip -o -selection clipboard | sed 's/ //g' | perl -lpe 's/[^-0-9]*(-{0,1}\d+\.\d+ {0,2}, {0,2}-{0,1}\d{0,3}\.\d+).*/$1/')
+                lat=$(echo ${location} | sed 's/\,..*//')
+                lon=$(echo ${location} | sed 's/..*\,//')
+                if [[ $(echo $lat | grep -P '\d+\.\d+') ]]; then
+                    echo "Teleporting to lat:$lat lon:$lon..."
+                    adb -s $device shell am start-foreground-service -a theappninjas.gpsjoystick.TELEPORT --ef lat $lat --ef lng $lon || true
+                fi
+            done
             exit ;;
         -s | --switch )
             adb shell am force-stop com.nianticlabs.pokemongo
