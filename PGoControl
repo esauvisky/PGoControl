@@ -13,7 +13,7 @@ PGO_DATA='/data/data/com.nianticlabs.pokemongo/'
 ####### Funções e configurações (normalmente não é necessário editar) #######
 #############################################################################
 ## Parâmetros posicionais do bash
-set -o errexit  # Exit on error. Append "|| true" if you expect an error.
+# set -o errexit  # Exit on error. Append "|| true" if you expect an error.
 set -o errtrace # Exit on error inside any functions or subshells.
 #set -o nounset  # Do not allow use of undefined vars. Use ${VAR:-} to use an undefined VAR
 #set -o pipefail # Catch the error in case mysqldump fails (but gzip succeeds) in `mysqldump |gzip`
@@ -53,10 +53,10 @@ function usage {
     echo -e "\nPretty much everything here requires a rooted device and adb running."
     echo -e "\nOptions:"
     echo -e "  -h, --help               This page"
+    echo -e "  -d, --device [ID]        Device identificator. If ID is blank, gives preference to an USB"
+    echo -e "                             connected device, assuming there's only one."
     echo -e "  -s, --switch             Switches Pokemon Go Profile between main "
     echo -e "                             and alt accounts, preserving data from both."
-    echo -e "  -c, --clean              Clears all data and restarts the application."
-    echo -e "                             The profile is backed up before cleaning up."
     echo -e "  -b, --backup             Backups your current profile to /sdcard"
     echo -e "  -p, --paste              Pastes your computer clipboard directly to the device."
     echo -e "                             Requires Android 7 or higher."
@@ -64,7 +64,6 @@ function usage {
     echo -e "                             Requires 'clipper' on your phone and 'xclip' on your PC."
     echo -e "                             Also assumes that you're using 'GPS Joystick' by TheAppNinjas."
     echo -e "  -t, --tracking           Toggles pointer tracking on screen."
-    echo -e "  -f, --feed               Feeds 10 berries each to 6 pokemons in a gym."
 
 }
 
@@ -136,67 +135,94 @@ function cleanPoGo {
 
 function pasteClipboard {
     local_clipboard=$(xclip -selection clipboard -o)
-    for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
+    for device in $devices; do
         echo "Sending $device"
         adb -s $device shell am broadcast -a clipper.set -e text \'${local_clipboard}\' && adb -s $device shell input keyevent KEYCODE_PASTE || true &
     done
 }
 
 function connectCommonDevices {
-    adb connect 10.42.0.41 &
-    adb connect 10.42.0.189 &
-    adb connect 192.168.202.88 &
+    adb start-server
+    # for ip in 192.168.1.{2..255} 10.42.0.{1..255}; do
+    #     echo "Connecting to $ip."
+    #     timeout 0.1s adb connect ${ip}:5555
+    # done
+    echo 10.42.0.{1..255} 192.168.1.{2..255}  | xargs -P6 -n1 bash -c '
+    echo "Connecting to ${1}.";
+    timeout 0.1s adb connect ${1}:5555' {}
+
+    adb reconnect offline
+    zenity --info --text="Connected to:\n$(adb devices | \grep -v "List of devices" | sed "s/device//g")"
 }
 
-function feedGym {
-    for (( p=1; p<=6;  p++ )); do
-        for (( i=1; i<=10; i++ )); do
-            # adb shell input tap 270 1400
-            adb shell input tap 530 1400
-            sleep 0.5
-        done
-        adb shell input swipe 1040 650 20 650 280
-        sleep 1
-    done
-}
+
+for (( n = 1; n <= $#; n++ )); do
+    if [[ ${!n} == '-d' || ${!n} == '--device' ]]; then
+        let n++
+        # echo ${!n}
+        if adb -s ${!n} get-state 1>2; then
+            devices=${!n}
+        else
+            let n--
+            devices=$(adb -d get-serialno)
+        fi
+        info "Using device $devices"
+    else
+        params+=("${!n}")
+        devices=$(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//')
+    fi
+done
+set -- "${params[@]}"
+debug ${@}
 
 for (( n = 1; n <= $#; n++ )); do
     case "${!n}" in
         -h | --help )
             usage
             exit ;;
-        -c | --clean )
-            backupPoGo
-            cleanPoGo
-            exit ;;
-        -pe )
-            pasteClipboard "teleport"
-            exit ;;
         -p | --paste )
             pasteClipboard
             exit ;;
+        -c | --connect)
+            connectCommonDevices
+            exit ;;
         -t | --tracking )
-            for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
+            for device in $devices; do
                 status=$(adb -s $device shell content query --uri content://settings/system/pointer_location | sed 's/^..*value=//')
                 if [[ $status -eq 1 ]]; then
-                    info "Disabling pointer tracking..."
-                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:0
+                    info "Disabling pointer tracking on $device..."
+                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:0 &
                 else
-                    info "Enabling pointer tracking..."
-                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:1
+                    info "Enabling pointer tracking on $device..."
+                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:1 &
                 fi
             done
             exit ;;
         -at | --auto-teleport )
-            for device in $(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'); do
-                # adb -s $device shell am start -a android.intent.action.VIEW -n com.tnqbegkugmeb.erpcrlqlrub/com.tnqbegkugmeb.erpcrlqlrub.ui.main.MainActivity -d "geo:$(xclip -o -selection clipboard | sed 's/ //g' | perl -lpe '"'"'s/^[^\d\-]*(-{0,1}\d+\.\d+ {0,2}, {0,2}-{0,1}\d+\.\d+).*$/$1/'"'"')" && adb -s $device shell input tap 900 1190 && adb -s $device shell input keyevent APP_SWITCH && adb -s $device shell input swipe 190 1690 800 1690 100 && adb -s $device shell input keyevent CLEAR APP_SWITCH &
+            let n++
+            if echo ${!n} | grep -P '^\-*\d+\.\d+,-*\d+\.\d+$'; then
+                location=${!n}
+                lat=$(echo ${location} | sed 's/\,..*//')
+                lon=$(echo ${location} | sed 's/..*\,//')
+            elif echo ${!n} | grep -P '^\-*\d+\.\d+$'; then
+                lat=${!n}
+                let n++
+                lon=${!n}
+                location=$lat,$lon
+            else
+                let n--
                 location=$(xclip -o -selection clipboard | sed 's/ //g' | perl -lpe 's/[^-0-9]*(-{0,1}\d+\.\d+ {0,2}, {0,2}-{0,1}\d{0,3}\.\d+).*/$1/')
                 lat=$(echo ${location} | sed 's/\,..*//')
                 lon=$(echo ${location} | sed 's/..*\,//')
-                if [[ $(echo $lat | grep -P '\d+\.\d+') ]]; then
-                    echo "Teleporting to lat:$lat lon:$lon..."
-                    adb -s $device shell am start-foreground-service -a theappninjas.gpsjoystick.TELEPORT --ef lat $lat --ef lng $lon || true
+                if ! echo ${location} | grep -P '^\-*\d+\.\d+,-*\d+\.\d+$'; then
+                    echo "ERROR: Doesn't look we have a coordinate."
+                    exit
                 fi
+            fi
+            echo "Location is ${location}"
+            for device in $devices; do
+                echo "Teleporting $device to lat:$lat lon:$lon..."
+                adb -s $device shell am start-foreground-service -a theappninjas.gpsjoystick.TELEPORT --ef lat $lat --ef lng $lon &
             done
             exit ;;
         -s | --switch )
@@ -207,9 +233,6 @@ for (( n = 1; n <= $#; n++ )); do
             exit ;;
         -b | --backup )
             backupPoGo
-            exit ;;
-        -f | --feed )
-            feedGym
             exit ;;
         * )
             error "Invalid option ${!n}"
