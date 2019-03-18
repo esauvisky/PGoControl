@@ -52,18 +52,21 @@ function usage {
     echo -e "Usage: ${__base} [OPTIONS]"
     echo -e "\nPretty much everything here requires a rooted device and adb running."
     echo -e "\nOptions:"
-    echo -e "  -h, --help               This page"
-    echo -e "  -d, --device [ID]        Device identificator. If ID is blank, gives preference to an USB"
-    echo -e "                             connected device, assuming there's only one."
-    echo -e "  -s, --switch             Switches Pokemon Go Profile between main "
-    echo -e "                             and alt accounts, preserving data from both."
-    echo -e "  -b, --backup             Backups your current profile to /sdcard"
-    echo -e "  -p, --paste              Pastes your computer clipboard directly to the device."
-    echo -e "                             Requires Android 7 or higher."
-    echo -e "  -pe                      Same as below but also clicks on Teleport automatically."
-    echo -e "                             Requires 'clipper' on your phone and 'xclip' on your PC."
-    echo -e "                             Also assumes that you're using 'GPS Joystick' by TheAppNinjas."
-    echo -e "  -t, --tracking           Toggles pointer tracking on screen."
+    echo -e "  -h,  --help           \tThis page"
+    echo -e "  -d,  --device [ID]    \tSelects which device to use (see adb devices)."
+    echo -e "                        \t  If not passed, all devices are used simultaneously."
+    echo -e "                        \t  If ID is blank, uses the device which is connected via USB"
+    echo -e "  -f,  --fetch-clipboard\tSyncs clipboard from device -> to computer."
+    echo -e "                        \t  Requires Android 7 or higher and clipper installed."
+    echo -e "  -p,  --paste-clipboard\tSyncs the clipboard from computer -> to device, while pasting."
+    echo -e "                        \t  Requires Android 7 or higher and clipper installed."
+    echo -e "  -l, --pointer-location\tToggles pointer-location (tracking) on the device(s)."
+    echo -e "  -t, --auto-teleport   \tTeleports all connected devices to any coordinate in your clipboard."
+    echo -e "  -s, --switch          \tMakes a backup of the current profile, and switches to a new one."
+    echo -e "                        \t  Useful for using multiple accounts, as all your data (incl. teams,"
+    echo -e "                        \t  sound configs, etc) will actually be backed up as well."
+    echo -e "  -b, --backup          \tMakes a backup of the current profile."
+
 
 }
 
@@ -141,21 +144,24 @@ function pasteClipboard {
     done
 }
 
-function connectCommonDevices {
-    adb start-server
-    # for ip in 192.168.1.{2..255} 10.42.0.{1..255}; do
-    #     echo "Connecting to $ip."
-    #     timeout 0.1s adb connect ${ip}:5555
-    # done
-    echo 10.42.0.{1..255} 192.168.1.{2..255}  | xargs -P6 -n1 bash -c '
-    echo "Connecting to ${1}.";
-    timeout 0.1s adb connect ${1}:5555' {}
+## This is useless, deprecated.
+# function connectCommonDevices {
+#     adb start-server
+#     # for ip in 192.168.1.{2..255} 10.42.0.{1..255}; do
+#     #     echo "Connecting to $ip."
+#     #     timeout 0.1s adb connect ${ip}:5555
+#     # done
+#     echo 10.42.0.{1..255} 192.168.1.{2..255}  | xargs -P6 -n1 bash -c '
+#     echo "Connecting to ${1}.";
+#     timeout 0.1s adb connect ${1}:5555' {}
 
-    adb reconnect offline
-    zenity --info --text="Connected to:\n$(adb devices | \grep -v "List of devices" | sed "s/device//g")"
-}
+#     adb reconnect offline
+#     zenity --info --text="Connected to:\n$(adb devices | \grep -v "List of devices" | sed "s/device//g")"
+# }
 
 
+## Stuff that deals with --device-id.
+## If existent, those args get stripped from the param list for the main loop below.
 for (( n = 1; n <= $#; n++ )); do
     if [[ ${!n} == '-d' || ${!n} == '--device' ]]; then
         let n++
@@ -173,20 +179,27 @@ for (( n = 1; n <= $#; n++ )); do
     fi
 done
 set -- "${params[@]}"
-debug ${@}
 
+## The "main loop below"
 for (( n = 1; n <= $#; n++ )); do
     case "${!n}" in
         -h | --help )
             usage
             exit ;;
-        -p | --paste )
+        -p | --paste-clipboard )
             pasteClipboard
             exit ;;
-        -c | --connect)
-            connectCommonDevices
-            exit ;;
-        -t | --tracking )
+        -f | --fetch-clipboard)
+            if [[ $(numberDevicesConnected) -gt 1 ]]; then
+                info "Select device..."
+                device=$(zenity --list --title="Multiple devices connected!" --text="Choose which device to grab the clipboard from: " --column "Device ID" $devices)
+            else
+                error "Something went wrong or user cancelled operation."
+            fi
+            info "Getting clipboard from device $device"
+            adb -s $device shell am broadcast -a clipper.get| tail -n1 | sed "s/..*data=\"\(..*\)\".*/\1/" | xclip -i -r -selection clipboard
+            ;;
+        -l | --pointer-location )
             for device in $devices; do
                 status=$(adb -s $device shell content query --uri content://settings/system/pointer_location | sed 's/^..*value=//')
                 if [[ $status -eq 1 ]]; then
@@ -198,7 +211,7 @@ for (( n = 1; n <= $#; n++ )); do
                 fi
             done
             exit ;;
-        -at | --auto-teleport )
+        -t | --teleport )
             let n++
             if echo ${!n} | grep -P '^\-*\d+\.\d+,-*\d+\.\d+$'; then
                 location=${!n}
