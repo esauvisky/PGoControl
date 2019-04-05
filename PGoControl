@@ -55,7 +55,7 @@ function usage {
     echo -e "  -h,  --help           \tThis page"
     echo -e "  -d,  --device [ID]    \tSelects which device to use (see adb devices)."
     echo -e "                        \t  If not passed, all devices are used simultaneously."
-    echo -e "                        \t  If ID is blank, uses the device which is connected via USB"
+    echo -e "                        \t  If it's a integer number, uses only the nth device listed."
     echo -e "  -f,  --fetch-clipboard\tSyncs clipboard from device -> to computer."
     echo -e "                        \t  Requires Android 7 or higher and clipper installed."
     echo -e "  -p,  --paste-clipboard\tSyncs the clipboard from computer -> to device, while pasting."
@@ -72,69 +72,60 @@ function usage {
 
 [[ $# -eq 0 ]] && usage
 
-function numberDevicesConnected {
-    echo $(( $(adb devices | wc -l) - 2 ))
-    #[[ $(adb devices 2>&1 | \grep $'\tdevice' -c) -eq 1 ]] && echo 1 || echo 0
-}
 
+# Obsolete becuase of Niklas implementation
+# function backupPoGo {
+#     if [[ -z $1 && -z $2 ]]; then
+#         backupTo=/sdcard/PGoBackups/$(date +%s)/
+#     elif [[ ! -z $1 && ! -z $2 ]]; then
+#         backupTo=/sdcard/PGoBackups/$1/
+#         movePreviousBackupTo=/sdcard/PGoBackups/$2/
+#         if ! $(adb shell test -d $backupTo); then
+#             info "No alt profile exists. Creating a new one..."
+#         elif $(adb shell test -d $movePreviousBackupTo); then
+#             info "ERROR! $movePreviousBackupTo already exists."
+#             exit
+#         else
+#             info "Moving last profile to temporary directory..."
+#             adb shell mv $backupTo $movePreviousBackupTo
+#         fi
+#     else
+#         critical "Something is wrong. backupPoGo takes 2 or 0 arguments."
+#     fi
+#     info "Copying PoGo data to $backupTo..."
+#     adb shell mkdir -p $backupTo
+#     adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/databases $backupTo || true
+#     adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/files $backupTo
+#     adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/no_backup $backupTo || true
+#     adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/shared_prefs $backupTo
 
-function backupPoGo {
-    if [[ -z $1 && -z $2 ]]; then
-        backupTo=/sdcard/PGoBackups/$(date +%s)/
-    elif [[ ! -z $1 && ! -z $2 ]]; then
-        backupTo=/sdcard/PGoBackups/$1/
-        movePreviousBackupTo=/sdcard/PGoBackups/$2/
-        if ! $(adb shell test -d $backupTo); then
-            info "No alt profile exists. Creating a new one..."
-        elif $(adb shell test -d $movePreviousBackupTo); then
-            info "ERROR! $movePreviousBackupTo already exists."
-            exit
-        else
-            info "Moving last profile to temporary directory..."
-            adb shell mv $backupTo $movePreviousBackupTo
-        fi
-    else
-        critical "Something is wrong. backupPoGo takes 2 or 0 arguments."
-    fi
-    info "Copying PoGo data to $backupTo..."
-    adb shell mkdir -p $backupTo
-    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/databases $backupTo || true
-    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/files $backupTo
-    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/no_backup $backupTo || true
-    adb shell su -c cp -R /data/data/com.nianticlabs.pokemongo/shared_prefs $backupTo
+# }
 
-}
+# function restorePoGo {
+#     [[ -z $1 || -z $PGO_DATA ]] && critical "restorePoGo() needs a parameter."
 
-function restorePoGo {
-    [[ -z $1 || -z $PGO_DATA ]] && critical "restorePoGo() needs a parameter."
+#     profileToRestore=/sdcard/PGoBackups/$1/
 
-    profileToRestore=/sdcard/PGoBackups/$1/
+#     if ! adb shell test -d $profileToRestore; then
+#         critical "Error, something happened and the profile doesn't exist."
+#         exit
+#     fi
 
-    if ! adb shell test -d $profileToRestore; then
-        critical "Error, something happened and the profile doesn't exist."
-        exit
-    fi
+#     info "Restoring last profile..."
+#     adb shell su -c cp -R $profileToRestore/* $PGO_DATA
 
-    info "Restoring last profile..."
-    adb shell su -c cp -R $profileToRestore/* $PGO_DATA
-
-    # PGO_ACC=$(adb shell su -c grep 'accountName' $PGO_DATA/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
-    # TMP_ACC=$(adb shell su -c grep 'accountName' /sdcard/PGoBackups/$1/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
-    if adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/; then
-        if [[ $1 == 'tempProfile' ]]; then
-            info "Deleting temporary folders"
-            adb shell rm -r $profileToRestore
-        fi
-    else
-        adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/ > ./error_log
-        critical "Somehow the accounts are different! Log was saved to ./error_log."
-    fi
-}
-
-function cleanPoGo {
-    adb shell pm clear com.nianticlabs.pokemongo
-    adb shell monkey -p com.nianticlabs.pokemongo 1
-}
+#     # PGO_ACC=$(adb shell su -c grep 'accountName' $PGO_DATA/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
+#     # TMP_ACC=$(adb shell su -c grep 'accountName' /sdcard/PGoBackups/$1/shared_prefs/com.nianticlabs.pokemongo.PREFS.xml | sed 's/..*>\(..*\)<..*$/\1/')
+#     if adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/; then
+#         if [[ $1 == 'tempProfile' ]]; then
+#             info "Deleting temporary folders"
+#             adb shell rm -r $profileToRestore
+#         fi
+#     else
+#         adb shell su -c diff -rq $profileToRestore/shared_prefs/ $PGO_DATA/shared_prefs/ > ./error_log
+#         critical "Somehow the accounts are different! Log was saved to ./error_log."
+#     fi
+# }
 
 function pasteClipboard {
     local_clipboard=$(xclip -selection clipboard -o)
@@ -144,35 +135,22 @@ function pasteClipboard {
     done
 }
 
-## This is useless, deprecated.
-# function connectCommonDevices {
-#     adb start-server
-#     # for ip in 192.168.1.{2..255} 10.42.0.{1..255}; do
-#     #     echo "Connecting to $ip."
-#     #     timeout 0.1s adb connect ${ip}:5555
-#     # done
-#     echo 10.42.0.{1..255} 192.168.1.{2..255}  | xargs -P6 -n1 bash -c '
-#     echo "Connecting to ${1}.";
-#     timeout 0.1s adb connect ${1}:5555' {}
-
-#     adb reconnect offline
-#     zenity --info --text="Connected to:\n$(adb devices | \grep -v "List of devices" | sed "s/device//g")"
-# }
-
-
 ## Stuff that deals with --device-id.
 ## If existent, those args get stripped from the param list for the main loop below.
 for (( n = 1; n <= $#; n++ )); do
     if [[ ${!n} == '-d' || ${!n} == '--device' ]]; then
         let n++
         # echo ${!n}
-        if adb -s ${!n} get-state 1>2; then
+        if [[ $(adb -s ${!n} get-state) =~ 'device' ]]; then
             devices=${!n}
+            info "Using device $devices"
+        elif [[ $(adb devices -l | sed 's/.*transport_id:\([0-9][0-9]*\)/\1/' | tail +2 2>/dev/null) =~ 3 ]]; then
+            devices=$(adb devices -l | sed 's/transport_id:\([0-9][0-9]*\)/\1/' | tail +2 | grep "..*device:..*  *"${!n} | sed 's/^\(..*\)  *device  *.*$/\1/')
+            info "Using device $devices"
         else
-            let n--
-            devices=$(adb -d get-serialno)
+            error "You must specify a device!"
+            return 1
         fi
-        info "Using device $devices"
     else
         params+=("${!n}")
         devices=$(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//')
@@ -194,7 +172,7 @@ for (( n = 1; n <= $#; n++ )); do
                 info "Select device..."
                 device=$(zenity --list --title="Multiple devices connected!" --text="Choose which device to grab the clipboard from: " --column "Device ID" $devices)
             else
-                error "Something went wrong or user cancelled operation."
+                device=$devices
             fi
             info "Getting clipboard from device $device"
             adb -s $device shell am broadcast -a clipper.get| tail -n1 | sed "s/..*data=\"\(..*\)\".*/\1/" | xclip -i -r -selection clipboard
