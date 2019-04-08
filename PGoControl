@@ -129,7 +129,7 @@ function usage {
 
 function pasteClipboard {
     local_clipboard=$(xclip -selection clipboard -o)
-    for device in $devices; do
+    for device in ${devices[@]}; do
         echo "Sending $device"
         adb -s $device shell am broadcast -a clipper.set -e text \'${local_clipboard}\' && adb -s $device shell input keyevent KEYCODE_PASTE || true &
     done
@@ -155,7 +155,7 @@ for (( n = 1; n <= $#; n++ )); do
         fi
     else
         params+=("${!n}")
-        devices=$(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//')
+        devices=($(adb devices | \grep device$ | sed 's/[\t ][\t ]*..*$//'))
     fi
 done
 set -- "${params[@]}"
@@ -170,25 +170,27 @@ for (( n = 1; n <= $#; n++ )); do
             pasteClipboard
             exit ;;
         -f | --fetch-clipboard)
-            if [[ $(numberDevicesConnected) -gt 1 ]]; then
+            if [[ ${#devices[@]} -gt 1 ]]; then
                 info "Select device..."
-                device=$(zenity --list --title="Multiple devices connected!" --text="Choose which device to grab the clipboard from: " --column "Device ID" $devices)
+                device=$(zenity --list --title="Multiple devices connected!" --text="Choose which device to grab the clipboard from: " --column "Device ID" ${devices[@]})
             else
-                device=$devices
+                device=${devices[0]}
             fi
             info "Getting clipboard from device $device"
             adb -s $device shell am broadcast -a clipper.get| tail -n1 | sed "s/..*data=\"\(..*\)\".*/\1/" | xclip -i -r -selection clipboard
             ;;
         -l | --pointer-location )
-            for device in $devices; do
-                status=$(adb -s $device shell content query --uri content://settings/system/pointer_location | sed 's/^..*value=//')
-                if [[ $status -eq 1 ]]; then
-                    info "Disabling pointer tracking on $device..."
-                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:0 &
-                else
-                    info "Enabling pointer tracking on $device..."
-                    adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:1 &
-                fi
+            for device in ${devices[@]}; do
+                (
+                    status=$(adb -s $device shell content query --uri content://settings/system/pointer_location | sed 's/^..*value=//')
+                    if [[ $status -eq 1 ]]; then
+                        info "Disabling pointer tracking on $device..."
+                        adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:0
+                    else
+                        info "Enabling pointer tracking on $device..."
+                        adb -s $device shell content insert --uri content://settings/system --bind name:s:pointer_location --bind value:i:1
+                    fi
+                ) &
             done
             exit ;;
         -t | --teleport )
@@ -213,9 +215,11 @@ for (( n = 1; n <= $#; n++ )); do
                 fi
             fi
             echo "Location is ${location}"
-            for device in $devices; do
-                echo "Teleporting $device to lat:$lat lon:$lon..."
-                adb -s $device shell am start-foreground-service -a theappninjas.gpsjoystick.TELEPORT --ef lat $lat --ef lng $lon &
+            for device in ${devices[@]}; do
+                (
+                    echo "Teleporting $device to lat:$lat lon:$lon..."
+                    adb -s $device shell am start-foreground-service -a theappninjas.gpsjoystick.TELEPORT --ef lat $lat --ef lng $lon
+                ) &
             done
             exit ;;
         -s | --switch )
