@@ -139,15 +139,17 @@ function pasteClipboard {
 ## If existent, those args get stripped from the param list for the main loop below.
 for (( n = 1; n <= $#; n++ )); do
     if [[ ${!n} == '-d' || ${!n} == '--device' ]]; then
-
         let n++
         devices_array=($(adb devices | \grep device$ | sed 's/[ \t][ \t]*device.*$//'))
-        # echo ${!n}
-        if [[ $(adb -s ${!n} get-state 2>/dev/null) =~ 'device' ]]; then
-            devices=${!n}
-            info "Using device $devices"
-        elif [[ ${!n} -le ${#devices_array[@]} ]]; then
-            devices=${devices_array[${!n} - 1]}
+        # # echo ${!n}
+        # if [[ $(adb -s ${!n} get-state 2>/dev/null) =~ 'device' ]]; then
+        #     devices=${!n}
+        #     info "Using device $devices"
+        # elif [[ ${!n} -le ${#devices_array[@]} ]]; then
+        #     devices=${devices_array[${!n} - 1]}
+        #     info "Using device $devices"
+        if [[ ${!n} -le ${#devices_array[@]} ]]; then
+            devices=(${devices_array[${!n} - 1]})
             info "Using device $devices"
         else
             error "You must specify a device!"
